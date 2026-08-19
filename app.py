@@ -471,22 +471,49 @@ def find_assignment(c,office_id,target,when=None):
 def _norm_key(value):
  return re.sub(r'[^a-z0-9]+','',str(value or '').lower())
 
+BANK_ALIASES=(
+ ('DANAMON',('DANAMON','BANK DANAMON')),
+ ('DANA',('DANA',)),
+ ('BCA',('BCA','BANK BCA')),
+ ('BRI',('BRI','BANK BRI')),
+ ('BNI',('BNI','BANK BNI')),
+ ('MANDIRI',('MANDIRI','BANK MANDIRI')),
+ ('SEABANK',('SEABANK','SEA BANK','BANK SEABANK')),
+ ('QRIS',('QRIS',)),
+ ('OVO',('OVO',)),
+ ('GOPAY',('GOPAY','GO PAY')),
+ ('CIMB',('CIMB','CIMB NIAGA','BANK CIMB')),
+)
+
+def _bank_text(value):
+ """Normalisasi teks bank tanpa membuat DANA cocok ke DANAMON."""
+ return re.sub(r'\\s+',' ',re.sub(r'[^A-Z0-9]+',' ',str(value or '').upper())).strip()
+
+def _has_bank_alias(text,alias):
+ text=_bank_text(text); alias=_bank_text(alias)
+ if not text or not alias:return False
+ # Token/phrase boundary: DANA tidak akan match DANAMON.
+ return re.search(r'(?<![A-Z0-9])'+re.escape(alias).replace(r'\\ ',r'\\s+')+r'(?![A-Z0-9])',text) is not None
+
 def _bank_tokens(value):
- text=str(value or '').upper()
- return {x for x in ('DANA','BCA','BRI','BNI','QRIS','MANDIRI','SEABANK','OVO','GOPAY','CIMB') if x in text}
+ text=_bank_text(value)
+ found=set()
+ for canon,aliases in BANK_ALIASES:
+  if any(_has_bank_alias(text,a) for a in aliases):
+   found.add(canon)
+ return found
 
 def _source_bank_name(value):
- """Normalisasi BANK ASAL untuk membentuk jobdesk Gx-BANK."""
- text=re.sub(r'[^A-Z0-9]+',' ',str(value or '').upper()).strip()
- # Urutan lebih spesifik dulu.
- aliases=[
-  ('DANA',('DANA',' DAN ')),('BCA',('BCA',)),('BRI',('BRI',)),('BNI',('BNI',)),
-  ('MANDIRI',('MANDIRI',)),('SEABANK',('SEABANK','SEA BANK')),('QRIS',('QRIS',)),
-  ('OVO',('OVO',)),('GOPAY',('GOPAY','GO PAY')),('CIMB',('CIMB',))]
- padded=' '+text+' '
- for canon,vals in aliases:
-  if any(v in padded for v in vals): return canon
- return text if text else ''
+ """Normalisasi bank/channel untuk jobdesk. DANA dan DANAMON wajib berbeda."""
+ raw=str(value or '').strip()
+ text=_bank_text(raw)
+ if not text:return ''
+ # Alias spesifik diletakkan lebih dulu; matcher tetap exact token/phrase.
+ for canon,aliases in BANK_ALIASES:
+  if any(_has_bank_alias(text,a) for a in aliases):
+   return canon
+ # Channel yang belum ada di daftar (mis. TELKOMSEL/SCAN BARCODE) tetap dipertahankan.
+ return text
 
 def _parse_info_to(value):
  """Fallback server: ambil tujuan dari Info -> To: tanpa membatasi jenis bank/channel."""
